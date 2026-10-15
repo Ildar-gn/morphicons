@@ -12,6 +12,7 @@
 import { onMount, untrack } from "svelte";
 import {
   computeInitialD,
+  computeInitialPaint,
   createController,
   type IconInput,
   type MorphIconProps,
@@ -37,21 +38,34 @@ let {
 // svelte-ignore state_referenced_locally — mount-time value on purpose: the
 // initial d must stay a constant so Svelte never rewrites the attribute.
 const initialD = computeInitialD({ icon, from, to, progress });
+const initialPaint = computeInitialPaint({ icon, from, to, progress });
 
 let pathEl: SVGPathElement | undefined = $state();
+const sw = $derived(
+  absoluteStrokeWidth ? (Number(strokeWidth) * 24) / Number(size) : strokeWidth,
+);
+
 // svelte-ignore state_referenced_locally — init-time values on purpose: they
 // seed the controller's watch baselines so the first $effect run is a no-op.
-const ctrl = createController({ icon, from, to, progress, reducedMotion });
+const ctrl = createController({
+  icon,
+  from,
+  to,
+  progress,
+  reducedMotion,
+  strokeWidth: sw,
+});
 
 onMount(() => {
-  if (pathEl) ctrl.mount(pathEl, { icon, from, to, progress, reducedMotion });
+  if (pathEl)
+    ctrl.mount(pathEl, { icon, from, to, progress, reducedMotion, strokeWidth: sw });
   return () => ctrl.destroy();
 });
 
 // Prop changes: one watcher owns the mode logic (controlled wins — change
 // detection and precedence live in shared.ts).
 $effect(() => {
-  const next = { icon, from, to, progress, spring, reducedMotion };
+  const next = { icon, from, to, progress, spring, reducedMotion, strokeWidth: sw };
   untrack(() => ctrl.watch(next));
 });
 
@@ -62,10 +76,6 @@ export function morphTo(i: IconInput, s?: SpringPreset | MorphOptions): void {
 export function set(i: IconInput): void {
   ctrl.set(i);
 }
-
-const sw = $derived(
-  absoluteStrokeWidth ? (Number(strokeWidth) * 24) / Number(size) : strokeWidth,
-);
 </script>
 
 <svg
@@ -75,6 +85,7 @@ const sw = $derived(
   viewBox="0 0 24 24"
   fill="none"
   stroke={color}
+  {color}
   stroke-width={sw}
   stroke-linecap="round"
   stroke-linejoin="round"
@@ -83,5 +94,5 @@ const sw = $derived(
   {...rest}
 >
   {#if label}<title>{label}</title>{/if}
-  <path bind:this={pathEl} d={initialD} />
+  <path bind:this={pathEl} d={initialD} {...initialPaint} />
 </svg>

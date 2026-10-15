@@ -100,22 +100,37 @@ describe("auto-fit via viewBox", () => {
   });
 });
 
-describe("morphability scan rejects what can't morph", () => {
-  test("a fill-drawn icon (no stroke) throws", () => {
+describe("morphability scan", () => {
+  test("a fill-drawn icon (no stroke) is accepted as a fill icon", () => {
     // Material Symbols style: filled silhouette, no stroke, no fill=none.
-    expect(() => svgToIcon('<path d="M4 4h16v16H4z"/>')).toThrow(/fill-drawn/);
+    // It used to throw; it now flies as a region (see test/region.test.ts).
+    const icon = svgToIcon('<path d="M4 4h16v16H4z"/>') as ReadonlyArray<
+      readonly [string, Record<string, unknown>]
+    >;
+    expect(icon[0][1]).toMatchObject({ fill: "currentColor", stroke: "none" });
   });
 
   test('an explicit stroke="none" is fill-drawn too', () => {
-    expect(() => svgToIcon('<path stroke="none" d="M4 4h16v16H4z"/>')).toThrow(
-      /fill-drawn/,
-    );
+    const icon = svgToIcon('<path stroke="none" d="M4 4h16v16H4z"/>') as ReadonlyArray<
+      readonly [string, Record<string, unknown>]
+    >;
+    expect(icon[0][1]).toMatchObject({ fill: "currentColor", stroke: "none" });
   });
 
-  test("a transform throws", () => {
-    expect(() =>
-      svgToIcon('<path stroke="currentColor" transform="translate(2 2)" d="M0 0h4"/>'),
-    ).toThrow(/transform/);
+  test("a transform is baked into the coordinates", () => {
+    const icon = svgToIcon(
+      '<path stroke="currentColor" transform="translate(2 2)" d="M0 0h4"/>',
+    ) as ReadonlyArray<readonly [string, Record<string, unknown>]>;
+    expect(icon[0][0]).toBe("path");
+    expect(icon[0][1].transform).toBeUndefined();
+    expect(canon(icon as IconInput)).toBe(canon("M2 2h4"));
+  });
+
+  test("a nested <g transform> composes with the element's own", () => {
+    const icon = svgToIcon(
+      '<g transform="translate(10 0)"><path stroke="currentColor" transform="scale(2)" d="M0 0h4"/></g>',
+    );
+    expect(canon(icon)).toBe(canon("M10 0h8"));
   });
 
   test("an unsupported element throws", () => {
@@ -152,5 +167,41 @@ describe("non-rendered content is ignored", () => {
   test("a stray self-closed container (<defs/>) is skipped, not rejected", () => {
     const node = svgToIcon('<defs/><path stroke="currentColor" d="M0 0h4"/>');
     expect((node as ReadonlyArray<readonly [string, unknown]>).length).toBe(1);
+  });
+
+  test("commented-out geometry is not geometry", () => {
+    const withComment =
+      '<svg stroke="currentColor" fill="none">' +
+      '<!-- <path d="M0 0h99v99H0z"/> -->' +
+      '<path d="M4 5h16M4 12h16M4 19h16"/>' +
+      "</svg>";
+    expect(canon(svgToIcon(withComment))).toBe(canon(svgToIcon(MENU)));
+  });
+
+  test("comment markers left by a comment, or never closed, are not geometry either", () => {
+    const nested =
+      '<svg stroke="currentColor" fill="none"><!<!---->-- <path d="M0 0h99"/> --><path d="M4 5h16M4 12h16M4 19h16"/></svg>';
+    expect(canon(svgToIcon(nested))).toBe(canon(svgToIcon(MENU)));
+    const open =
+      '<svg stroke="currentColor" fill="none"><path d="M4 5h16M4 12h16M4 19h16"/><!-- <path d="M0 0h99"/></svg>';
+    expect(canon(svgToIcon(open))).toBe(canon(svgToIcon(MENU)));
+  });
+
+  test("display none and visibility hidden are not rendered, groups included", () => {
+    const hidden =
+      '<svg stroke="currentColor" fill="none">' +
+      '<path display="none" d="M0 0h99"/>' +
+      '<path style="visibility:hidden" d="M0 0h98"/>' +
+      '<g display="none"><path display="inline" d="M0 0h97"/></g>' +
+      '<path d="M4 5h16M4 12h16M4 19h16"/>' +
+      "</svg>";
+    expect(canon(svgToIcon(hidden))).toBe(canon(svgToIcon(MENU)));
+  });
+
+  test("CSS paint (an Illustrator Internal CSS export) is refused, not guessed", () => {
+    const css =
+      '<svg viewBox="0 0 24 24"><defs><style>.a{fill:none;stroke:#000}</style></defs>' +
+      '<path class="a" d="M4 5h16M4 12h16M4 19h16"/></svg>';
+    expect(() => svgToIcon(css)).toThrow("<style>");
   });
 });

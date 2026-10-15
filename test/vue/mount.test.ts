@@ -8,7 +8,7 @@ import { createApp, h, nextTick, reactive, shallowRef } from "vue";
 import type { MorphHandle } from "../../src/vue/index";
 import { MorphIcon } from "../../src/vue/index";
 import { frame, pendingFrames, registerDom, settleAll } from "../client-dom";
-import { ICONS } from "../helpers";
+import { FILL_DISC, ICONS, regionScrubD } from "../helpers";
 
 registerDom();
 
@@ -28,6 +28,7 @@ function mountIcon(initial: Props) {
   app.mount(container);
   const instance = {
     d: (): string => container.querySelector("path")?.getAttribute("d") ?? "",
+    svg: (): Element | null => container.querySelector("svg"),
     update: async (next: Props): Promise<void> => {
       for (const key of Object.keys(props)) delete props[key];
       Object.assign(props, next);
@@ -191,5 +192,34 @@ describe("MorphIcon (Vue reduced motion)", () => {
     expect(pendingFrames()).toBeGreaterThan(0);
     settleAll();
     expect(m.d()).toBe(ICONS.check);
+  });
+});
+
+describe("MorphIcon (Vue paint)", () => {
+  test("a fill icon paints currentColor, and the svg's color is the prop", () => {
+    const m = mountIcon({ icon: FILL_DISC, color: "#14854f" });
+    const svg = m.svg();
+    expect(svg?.getAttribute("color")).toBe("#14854f");
+    expect(svg?.getAttribute("stroke")).toBe("#14854f");
+    expect(svg?.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
+    m.unmount();
+  });
+
+  test("the stroke width reaches the driver: stroke ↔ fill outlines at it", async () => {
+    const x1 = await regionScrubD(ICONS.x, 0.5, 1);
+    const menu3 = await regionScrubD(ICONS.menu, 0.5, 3);
+    const m = mountIcon({ from: ICONS.x, to: FILL_DISC, progress: 0.5, strokeWidth: 1 });
+    expect(m.d()).toBe(x1);
+    await m.update({ from: ICONS.menu, to: FILL_DISC, progress: 0.5, strokeWidth: 3 });
+    expect(m.d()).toBe(menu3); // live
+    await m.update({
+      from: ICONS.x,
+      to: FILL_DISC,
+      progress: 0.5,
+      size: 48,
+      strokeWidth: 2,
+      absoluteStrokeWidth: true,
+    });
+    expect(m.d()).toBe(x1); // absolute: 2 px at 48 is 1 on the grid
   });
 });

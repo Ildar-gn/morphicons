@@ -8,7 +8,7 @@ import { renderToString } from "react-dom/server";
 import { canonicalD } from "../../src/dom/index";
 import type { IconNode } from "../../src/index";
 import { MorphIcon } from "../../src/react/index";
-import { ICONS } from "../helpers";
+import { FILL_RING, ICONS } from "../helpers";
 
 const SQUARE: IconNode = [["rect", { x: 2, y: 2, width: 20, height: 20 }]];
 
@@ -60,6 +60,26 @@ describe("MorphIcon (SSR)", () => {
     expect(html).not.toContain("aria-hidden");
   });
 
+  test("a fill icon is filled in the server markup; a stroke icon's path carries no paint", () => {
+    const html = renderToString(<MorphIcon icon={FILL_RING} />);
+    expect(html).toMatch(/<path[^>]* fill="currentColor"/);
+    expect(html).toMatch(/<path[^>]* stroke="none"/);
+    expect(html).toMatch(/<path[^>]* fill-rule="nonzero"/);
+    expect(renderToString(<MorphIcon icon={ICONS.menu} />)).toContain(
+      `<path d="${ICONS.menu}"></path>`,
+    );
+    // controlled with a fill endpoint: a region scrub only the lazy chunk
+    // draws, so mid-way the server rests on `from` (shape AND paint)
+    const pair = (t: number) =>
+      renderToString(<MorphIcon from={ICONS.menu} to={FILL_RING} progress={t} />);
+    expect(pair(0.75)).toContain(`<path d="${ICONS.menu}"></path>`);
+    expect(pair(1)).toMatch(/<path[^>]* fill="currentColor"/);
+    // a stroke pair still freezes mid-way with the pure core
+    expect(
+      renderToString(<MorphIcon from={ICONS.menu} to={ICONS.x} progress={0.5} />),
+    ).not.toContain(`d="${ICONS.menu}"`);
+  });
+
   test("lucide-react drop-in: size, color, strokeWidth, className passthrough", () => {
     const html = renderToString(
       <MorphIcon
@@ -74,6 +94,7 @@ describe("MorphIcon (SSR)", () => {
     expect(html).toContain('width="32"');
     expect(html).toContain('height="32"');
     expect(html).toContain('stroke="#e6a83c"');
+    expect(html).toContain('color="#e6a83c"'); // a filled path's currentColor
     expect(html).toContain('stroke-width="1.5"');
     expect(html).toContain('class="my-icon"');
     expect(html).toContain('data-testid="morph"');

@@ -10,9 +10,10 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { IconInput } from "../../src/core/types";
+import { preloadRegion } from "../../src/dom/index";
 import { defineMorphIcon, MorphIconElement } from "../../src/element/index";
 import { frame, pendingFrames, registerDom, settleAll } from "../client-dom";
-import { ICONS } from "../helpers";
+import { FILL_DISC, ICONS, regionScrubD } from "../helpers";
 
 registerDom();
 defineMorphIcon();
@@ -186,6 +187,7 @@ describe("MorphIcon (custom element attributes)", () => {
     m.el.setAttribute("color", "tomato");
     expect(svg?.getAttribute("width")).toBe("32");
     expect(svg?.getAttribute("stroke")).toBe("tomato");
+    expect(svg?.getAttribute("color")).toBe("tomato"); // a filled path's currentColor
     expect(m.d()).toBe(ICONS.menu);
     expect(pendingFrames()).toBe(0);
   });
@@ -321,6 +323,22 @@ describe("MorphIcon (custom element verbatim adoption: zero d writes)", () => {
 });
 
 describe("MorphIcon (custom element SSR adoption)", () => {
+  test("a server-filled path is adopted as a fill icon: morphing to a stroke icon restores the stroke", async () => {
+    await preloadRegion();
+    const host = document.createElement("div");
+    host.innerHTML =
+      `<morph-icon>${SVG_OPEN}<path d="M4 4h16v16H4zM8 8h8v8H8z" fill="currentColor" ` +
+      `stroke="none" fill-rule="evenodd"></path></svg></morph-icon>`;
+    document.body.appendChild(host);
+    cleanups.push(() => host.remove());
+    const path = host.querySelector("path") as Element;
+    (host.querySelector("morph-icon") as MorphIconElement).morphTo(ICONS.x);
+    settleAll();
+    expect(path.getAttribute("d")).toBe(ICONS.x);
+    expect(path.getAttribute("fill")).toBe("none");
+    expect(path.getAttribute("stroke")).toBe("inherit");
+  });
+
   test("pre-rendered markup is adopted verbatim and morphs away from it", () => {
     const host = document.createElement("div");
     host.innerHTML =
@@ -432,5 +450,36 @@ describe("MorphIcon (custom element reduced motion)", () => {
     expect(pendingFrames()).toBeGreaterThan(0);
     settleAll();
     expect(m.d()).toBe(ICONS.check);
+  });
+});
+
+describe("MorphIcon (custom element paint)", () => {
+  test("a fill icon paints currentColor, and the svg's color is the attribute", () => {
+    const m = mountIcon({ icon: FILL_DISC });
+    m.el.setAttribute("color", "#14854f");
+    const svg = m.el.querySelector("svg");
+    expect(svg?.getAttribute("color")).toBe("#14854f");
+    expect(svg?.getAttribute("stroke")).toBe("#14854f");
+    expect(svg?.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
+  });
+
+  test("the stroke width reaches the driver: stroke ↔ fill outlines at it", async () => {
+    const x1 = await regionScrubD(ICONS.x, 0.5, 1);
+    const menu3 = await regionScrubD(ICONS.menu, 0.5, 3);
+    const el = document.createElement("morph-icon") as HTMLElement & Initial;
+    el.setAttribute("stroke-width", "1");
+    Object.assign(el, { from: ICONS.x, to: FILL_DISC, progress: 0.5 });
+    document.body.appendChild(el);
+    cleanups.push(() => el.remove());
+    const d = (): string => el.querySelector("path")?.getAttribute("d") ?? "";
+    expect(d()).toBe(x1);
+    el.setAttribute("stroke-width", "3"); // live
+    Object.assign(el, { from: ICONS.menu });
+    expect(d()).toBe(menu3);
+    el.setAttribute("size", "48");
+    el.setAttribute("stroke-width", "2");
+    el.setAttribute("absolute-stroke-width", "");
+    Object.assign(el, { from: ICONS.x });
+    expect(d()).toBe(x1); // absolute: 2 px at 48 is 1 on the grid
   });
 });

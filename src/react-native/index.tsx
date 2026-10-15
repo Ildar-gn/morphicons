@@ -14,7 +14,9 @@
    The `d` React declares is therefore the driver's live one — computed with
    the pure core for the first render (SSR-exact) and re-published on every
    later render, with a layout effect repairing the window between a render
-   and its commit.
+   and its commit. Paint (fill / stroke / fill-rule, written when a fill
+   icon flies as a region) takes the same road, with currentColor and
+   inherit resolved to `color`: RN has no CSS cascade.
 
    No matchMedia in RN: with reducedMotion="user" the OS setting comes from
    AccessibilityInfo, cached best-effort (the query is async) and kept fresh
@@ -37,12 +39,14 @@ import { resampleIcon } from "../core/resample";
 import { serialize } from "../core/serialize";
 import type { SpringPreset } from "../core/spring";
 import type { IconInput } from "../core/types";
+import { frozenEnd } from "../dom/controller";
 import {
   canonicalD,
   createMorph,
   type Morph,
   type MorphOptions,
   type ReducedMotionMode,
+  restAttrs,
 } from "../dom/index";
 import { useIsoLayoutEffect } from "./iso-layout-effect";
 
@@ -104,11 +108,36 @@ function initReducedMotion(): void {
   }
 }
 
+// Paint attributes the driver writes → react-native-svg props.
+const PAINT_PROPS: Record<string, keyof NativePaint> = {
+  fill: "fill",
+  stroke: "stroke",
+  "fill-rule": "fillRule",
+};
+
+interface NativePaint {
+  fill?: string;
+  stroke?: string;
+  fillRule?: string;
+}
+
+/** The driver's paint in native terms: currentColor (fill) and inherit
+ *  (stroke) are the `color` prop — there is no cascade to resolve them. */
+function tint(
+  p: NativePaint,
+  color: string,
+): Pick<SvgProps, "fill" | "stroke" | "fillRule"> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(p))
+    out[k] = v === "currentColor" || v === "inherit" ? color : v;
+  return out;
+}
+
 /** Frozen shape of the from→to pair at t, using the pure core. At exact
  *  endpoints returns the canonical `d` (real curves, not polyline). */
 function frozenD(from: IconInput, to: IconInput, t: number): string {
-  if (t <= 0) return canonicalD(from);
-  if (t >= 1) return canonicalD(to);
+  const end = frozenEnd(from, to, t);
+  if (end !== null) return canonicalD(end);
   const plan = buildPlan(resampleIcon(from), resampleIcon(to));
   const out = allocOutputs(plan);
   interpPolar(plan, t, out);
@@ -150,6 +179,21 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
     // must carry the driver's latest `d` instead of a mount-time snapshot.
     const liveD = useRef(initialD);
     const declaredD = liveD.current;
+    // The paint the driver wrote, raw, seeded with the first icon's rest
+    // paint (empty for a stroke icon: the path inherits the Svg's stroke).
+    // Replaced on every write, never mutated.
+    const [initialPaint] = useState((): NativePaint => {
+      const a = restAttrs(
+        controlled
+          ? (frozenEnd(from, to, progress ?? 0) ?? ((progress ?? 0) < 0.5 ? from : to))
+          : initialIcon,
+      );
+      return a ? { fill: a.fill, stroke: a.stroke, fillRule: a["fill-rule"] } : {};
+    });
+    const livePaint = useRef(initialPaint);
+    const declaredPaint = livePaint.current;
+    const colorRef = useRef(color);
+    colorRef.current = color;
 
     const pathRef = useRef<Path>(null);
     const morphRef = useRef<Morph | null>(null);
@@ -157,6 +201,13 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
     springRef.current = spring;
     const rmRef = useRef(reducedMotion);
     rmRef.current = reducedMotion;
+    // The stroke width on the 24 grid: what a stroke icon is outlined at
+    // when it morphs with a fill icon (live, like the policy).
+    const gridSw = Number(
+      absoluteStrokeWidth ? (Number(strokeWidth) * 24) / Number(size) : strokeWidth,
+    );
+    const swRef = useRef(gridSw);
+    swRef.current = gridSw;
     // Watch baselines (mount doesn't fire the mode effect thanks to these).
     const prevIcon = useRef(icon);
     const prevControlled = useRef(controlled);
@@ -166,13 +217,20 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
     const based = useRef(false);
     const pair = useRef<readonly [IconInput, IconInput] | null>(null);
 
-    /** The PathEl shim: createMorph only ever writes `d`, and Path forwards
-     *  it to the native view without re-rendering. Stable identity. */
+    /** The PathEl shim: createMorph writes `d` (every frame) and paint (on
+     *  a stroke ↔ fill change), and Path forwards both to the native view
+     *  without re-rendering. Stable identity. */
     const el = useRef<{ setAttribute(name: string, value: string): void }>({
       setAttribute: (name, value) => {
-        if (name !== "d") return;
-        liveD.current = value;
-        pathRef.current?.setNativeProps({ d: value });
+        if (name === "d") {
+          liveD.current = value;
+          pathRef.current?.setNativeProps({ d: value });
+          return;
+        }
+        const key = PAINT_PROPS[name];
+        if (!key) return;
+        livePaint.current = { ...livePaint.current, [key]: value };
+        pathRef.current?.setNativeProps(tint({ [key]: value }, colorRef.current));
       },
     });
 
@@ -194,14 +252,16 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
     const ensure = useCallback((birth: IconInput): Morph | null => {
       if (morphRef.current) return morphRef.current;
       if (dead.current || !pathRef.current) return null;
-      morphRef.current = createMorph(el.current, birth);
+      morphRef.current = createMorph(el.current, birth, { strokeWidth: swRef.current });
       return morphRef.current;
     }, []);
 
     useIsoLayoutEffect(() => {
       dead.current = false;
       if (pathRef.current && initialIcon !== undefined) {
-        const m = createMorph(el.current, controlled ? from : initialIcon);
+        const m = createMorph(el.current, controlled ? from : initialIcon, {
+          strokeWidth: swRef.current,
+        });
         morphRef.current = m;
         if (controlled) {
           pair.current = [from, to];
@@ -233,6 +293,8 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
     useIsoLayoutEffect(() => {
       if (liveD.current !== declaredD)
         pathRef.current?.setNativeProps({ d: liveD.current });
+      if (livePaint.current !== declaredPaint)
+        pathRef.current?.setNativeProps(tint(livePaint.current, colorRef.current));
     });
 
     // "user" arms the OS listener the moment it is requested (mount included):
@@ -241,6 +303,12 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
     useEffect(() => {
       if (reducedMotion === "user") initReducedMotion();
     }, [reducedMotion]);
+
+    // The outline width is live too, declared before the mode effects.
+    useEffect(() => {
+      const m = morphRef.current;
+      if (m) m.strokeWidth = gridSw;
+    }, [gridSw]);
 
     // Uncontrolled mode: animate when `icon` changes. Controlled wins while
     // a full pair is present; dropping the pair hands the path back to
@@ -328,7 +396,7 @@ export const MorphIcon = forwardRef<MorphHandle, MorphIconProps>(
         aria-hidden={label ? undefined : true}
         {...rest}
       >
-        <Path ref={pathRef} d={declaredD} />
+        <Path ref={pathRef} d={declaredD} {...tint(declaredPaint, color)} />
       </Svg>
     );
   },
