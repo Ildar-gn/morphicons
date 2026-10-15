@@ -39,7 +39,7 @@ export function GET() {
   // starts at the first line that isn't HTML or indentation.
   const start = readme.search(/^[^<\s]/m);
   const text = [
-    "# morphicons — full documentation",
+    "# morphicons: full documentation",
     "",
     `> npm: \`morphicons\` · site: https://www.morphicons.com · repo: ${REPO_URL} · index: https://www.morphicons.com/llms.txt`,
     "",

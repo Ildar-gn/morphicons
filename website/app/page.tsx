@@ -1,11 +1,9 @@
 import { CodePanel } from "@/components/code-panel";
 import { InstallCommand } from "@/components/copy-button";
 import { DocsButton } from "@/components/docs-button";
-import { GITHUB_URL, SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { Studio } from "@/components/studio";
 
-/* The README is the source of truth for the API. */
-const DOCS_URL = `${GITHUB_URL}#readme`;
 
 const STATS: { value: string; caption: string }[] = [
   { value: "10 KB", caption: "gzip with a framework binding" },
@@ -78,7 +76,7 @@ export default function Home() {
                   </code>{" "}
                   format. No per-library setup.
                 </p>
-                <DocsButton href={DOCS_URL} />
+                <DocsButton href="/docs" />
               </div>
               <dl className="grid grid-cols-2 content-center gap-x-8 gap-y-10">
                 {STATS.map((s) => (

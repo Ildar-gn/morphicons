@@ -8,7 +8,7 @@ const NAV_LINKS: NavLink[] = [
   /* The home hero IS the studio; "Playground" is the way back to it. */
   { href: "/", label: "Playground" },
   { href: "/showcase", label: "Showcase" },
-  { href: "/#how", label: "How it works" },
+  { href: "/docs", label: "Docs" },
   { href: "/roadmap", label: "Roadmap" },
   { href: GITHUB_URL, label: "GitHub", external: true },
   { href: "https://x.com/guillermolg00", label: "X", external: true },
@@ -63,7 +63,7 @@ export function SiteFooter() {
           morphicons, MIT license.
         </span>
         <span>
-          Demo icons belong to their authors: Lucide (ISC), Heroicons (MIT), Tabler (MIT).
+          Demo icons belong to their authors, see the <Link href="/docs#credits" className="underline transition-colors hover:text-ink">credits</Link>.
         </span>
         <span className="flex items-center gap-4">
           <a

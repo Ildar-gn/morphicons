@@ -12,8 +12,6 @@ export function DocsButton({ href }: { href: string }) {
 	return (
 		<a
 			href={href}
-			target="_blank"
-			rel="noopener noreferrer"
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => setHovered(false)}
 			onFocus={() => setHovered(true)}
