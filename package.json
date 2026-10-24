@@ -1,6 +1,6 @@
 {
   "name": "morphicons",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Universal morphing for SVG icons, stroked or filled, with spring physics and zero runtime dependencies",
   "license": "MIT",
   "author": "Guillermo (https://guillermolg.com)",
